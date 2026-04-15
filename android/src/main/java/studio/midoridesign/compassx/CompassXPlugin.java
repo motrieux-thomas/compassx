@@ -108,10 +108,25 @@ public class CompassXPlugin implements FlutterPlugin, EventChannel.StreamHandler
                 if (event.sensor.getType() == Sensor.TYPE_ROTATION_VECTOR) {
                     float[] rotationMatrix = new float[9];
                     SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values);
-                    float[] orientationAngles = new float[3];
-                    SensorManager.getOrientation(rotationMatrix, orientationAngles);
 
-                    float azimuth = (float) Math.toDegrees(orientationAngles[0]);
+                    float azimuth;
+                    // rotationMatrix[7] = sin(pitch) in the row-major ENU matrix.
+                    // |pitch| > 45° means the phone is more upright than flat.
+                    if (Math.abs(rotationMatrix[7]) > 0.7071f) {
+                        // Upright phone (AR pose): device -Z axis is "forward".
+                        // Read the rotation matrix columns directly to avoid
+                        // the gimbal lock that getOrientation() hits near ±90° pitch.
+                        azimuth = (float) Math.toDegrees(
+                            Math.atan2(-rotationMatrix[2], -rotationMatrix[5])
+                        );
+                        if (azimuth < 0) azimuth += 360;
+                    } else {
+                        // Flat phone (compass pose): original behavior, unchanged.
+                        float[] orientationAngles = new float[3];
+                        SensorManager.getOrientation(rotationMatrix, orientationAngles);
+                        azimuth = (float) Math.toDegrees(orientationAngles[0]);
+                    }
+
                     float trueHeading = calculateTrueHeading(azimuth);
                     float accuracyRadian = event.values[4];
                     float accuracy =
