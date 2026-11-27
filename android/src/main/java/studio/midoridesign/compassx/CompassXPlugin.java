@@ -14,6 +14,7 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle; 
+import android.util.Log;
 import androidx.core.content.ContextCompat;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.plugin.common.PluginRegistry;
@@ -21,8 +22,10 @@ import io.flutter.plugin.common.EventChannel;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
 import java.util.HashMap;
+import java.util.List;
 
 public class CompassXPlugin implements FlutterPlugin, EventChannel.StreamHandler, ActivityAware {
+    private static final String TAG = "CompassXPlugin";
     private EventChannel channel;
     private Context context;
     private SensorManager sensorManager;
@@ -223,10 +226,32 @@ public class CompassXPlugin implements FlutterPlugin, EventChannel.StreamHandler
                 Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
 
         if (!hasFineLocation && !hasCoarseLocation) return;
+        if (locationManager == null) return;
+
+        String provider = pickLocationProvider(locationManager.getAllProviders());
+        if (provider == null) return;
 
         // Since this location is used for GeomagneticField, it is acceptable to update it less
         // frequently.
-        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 300000L, 10f,
-                locationListener);
+        try {
+            locationManager.requestLocationUpdates(provider, 300000L, 10f, locationListener);
+        } catch (IllegalArgumentException | SecurityException e) {
+            // Without a location the heading falls back to magnetic north; never crash for it.
+            Log.w(TAG, "Location updates unavailable from " + provider, e);
+        }
+    }
+
+    // Devices without GPS hardware (Wi-Fi tablets, Chromebooks) have no "gps" provider, and
+    // requestLocationUpdates throws IllegalArgumentException for a provider that doesn't exist.
+    static String pickLocationProvider(List<String> providers) {
+        if (providers == null) return null;
+        if (providers.contains(LocationManager.GPS_PROVIDER)) return LocationManager.GPS_PROVIDER;
+        if (providers.contains(LocationManager.NETWORK_PROVIDER)) {
+            return LocationManager.NETWORK_PROVIDER;
+        }
+        if (providers.contains(LocationManager.PASSIVE_PROVIDER)) {
+            return LocationManager.PASSIVE_PROVIDER;
+        }
+        return null;
     }
 }
